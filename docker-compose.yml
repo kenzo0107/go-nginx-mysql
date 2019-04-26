@@ -11,6 +11,7 @@ services:
       - .:/go/src/app
     environment:
       GO111MODULE: "on"
+      GO_ENV: localhost
     links:
       - db
     depends_on:

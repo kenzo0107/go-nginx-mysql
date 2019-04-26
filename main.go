@@ -1,27 +1,73 @@
 package main
 
 import (
+	"app/config"
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/gorilla/mux"
 )
 
-func main() {
-	http.HandleFunc("/", top)
-	http.HandleFunc("/article", article)
-	http.ListenAndServe(":8080", nil)
+// NewDB return database global connection handle.
+func NewDB(conf config.DBConfig) (*sql.DB, error) {
+	db, err := sql.Open(
+		"mysql",
+		fmt.Sprintf(
+			"%s:%s@tcp(%s:%d)/%s",
+			conf.User,
+			conf.Password,
+			conf.Host,
+			conf.Port,
+			conf.Name))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Ping(); err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
-func top(w http.ResponseWriter, r *http.Request) {
-	db, err := sql.Open("mysql", "root:@tcp(db:3306)/hoge")
+// Handler ... DB Handler
+type Handler struct {
+	DB *sql.DB
+}
+
+func main() {
+	var err error
+
+	appMode := os.Getenv("GO_ENV")
+	if appMode == "" {
+		panic("failed to get application mode, check whether GO_ENV is set.")
+	}
+
+	conf, err := config.NewConfig(appMode)
 	if err != nil {
 		panic(err.Error())
 	}
-	defer db.Close()
 
-	rows, err := db.Query("select id, name from users")
+	db, err := NewDB(conf.DB)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	h := Handler{DB: db}
+	r := mux.NewRouter()
+
+	r.Methods("GET").Path("/").HandlerFunc(h.top)
+	r.Methods("GET").Path("/article").HandlerFunc(h.article)
+
+	fmt.Fprint(os.Stdout, ">> Start to listen http server post :8080\n")
+	if err = http.ListenAndServe(":8080", r); err != nil {
+		panic(err.Error())
+	}
+}
+
+func (h *Handler) top(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.DB.Query("select id, name from users")
 	if err != nil {
 		panic(err.Error())
 	}
@@ -37,6 +83,6 @@ func top(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func article(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) article(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Article !\n")
 }
